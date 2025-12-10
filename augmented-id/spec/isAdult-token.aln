@@ -1,0 +1,60 @@
+aln spec augmented_id.isAdult_token.v1
+
+  struct IsAdultRequest
+    field jurisdiction_code string
+    field site_origin string
+    field nonce bytes_32
+    field requested_threshold uint8    # e.g., 18, 21
+  end
+
+  struct IsAdultToken
+    field token_id bytes_32            # 256-bit random
+    field holder_pseudonymous_did string
+    field jurisdiction_code string
+    field age_threshold uint8
+    field age_threshold_satisfied bool
+    field issuer_did string
+    field method_class string          # e.g., "HB2112-digital-id"
+    field issued_at timestamp
+    field not_before timestamp
+    field not_after timestamp
+    field binding_hash bytes_32        # H(site_origin || nonce || holder_pseudo_did || jurisdiction || issued_at)
+    field zk_proof bytes_optional      # optional ZK proof blob
+    field signature bytes              # issuer signature over canonical token
+  end
+
+  function mint_isAdult_token(request IsAdultRequest, vc AgeOverCredential) returns IsAdultToken
+    require vc.jurisdiction == request.jurisdiction_code
+    require vc.age_over >= request.requested_threshold
+
+    let token.token_id = random_bytes_32()
+    let token.holder_pseudonymous_did = derive_pairwise_did(vc.subject_id, request.site_origin, request.jurisdiction_code)
+    let token.jurisdiction_code = request.jurisdiction_code
+    let token.age_threshold = request.requested_threshold
+    let token.age_threshold_satisfied = true
+    let token.issuer_did = vc.issuer
+    let token.method_class = vc.evidence[0].method_class
+    let token.issued_at = now()
+    let token.not_before = now()
+    let token.not_after = now_plus_seconds(300)
+
+    let token.binding_hash = H(
+      concat(
+        request.site_origin,
+        request.nonce,
+        token.holder_pseudonymous_did,
+        token.jurisdiction_code,
+        token.issued_at
+      )
+    )
+
+    if zk_supported()
+      token.zk_proof = prove_age_over_threshold(vc, request.requested_threshold)
+    end
+
+    token.signature = issuer_sign(token)
+
+    return token
+  end
+
+end
