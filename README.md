@@ -1,10 +1,13 @@
 ![ALN Compliance Charter](https://img.shields.io/badge/ALN%20Compliance-Enforced-brightgreen)
-![KYC/DID Verified](https://img.shields.io/badge/KYC%20Verified-DID%20Required-blue)
+![KYC/DID Verified](https://img.shields.io/badge/KYC%20%2F%20DID-Verified-blue)
 ![Immutable Ledger](https://img.shields.io/badge/Ledger-Blockchain%20Secured-orange)
 ![Audit-Ready](https://img.shields.io/badge/Audit-Continuous%20Monitoring-yellow)
-![No Neural Networking](https://img.shields.io/badge/No%20Neural%20Networking-Deterministic%20Only-red)
-![Asset-Backed](https://img.shields.io/badge/Asset%20Backed-Terra%20Blockchain-lightgrey)
-
+![Neural Networking Ready](https://img.shields.io/badge/Neural%20Networking-Governed%20Use-purple)
+![BCI/EEG Local Only](https://img.shields.io/badge/BCI%20%2F%20EEG-Device%20Local%20Only-informational)
+![Age Attestation](https://img.shields.io/badge/Age%20Checks-ZK%20Attestation%20Ready-success)
+![Jurisdiction Profiles](https://img.shields.io/badge/Jurisdiction-HB2112%20%2B%20Global%20Profiles-blueviolet)
+![On-Device Privacy](https://img.shields.io/badge/Privacy-On%2DDevice%20Wallet-lightgrey)
+![Smart City Ready](https://img.shields.io/badge/Smart%20City-Virtual%20Node%20Ready-brightgreen)
 
 <img src="https://r2cdn.perplexity.ai/pplx-full-logo-primary-dark%402x.png" style="height:64px;margin-right:32px"/>
 
