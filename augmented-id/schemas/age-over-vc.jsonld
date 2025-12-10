@@ -1,0 +1,37 @@
+{
+  "@context": [
+    "https://www.w3.org/2018/credentials/v1",
+    {
+      "AgeOverCredential": "https://example.org/credentials/age-over",
+      "age_over": "https://example.org/claims/age_over",
+      "jurisdiction": "https://example.org/claims/jurisdiction",
+      "method": "https://example.org/claims/method",
+      "issue_time": "https://example.org/claims/issue_time",
+      "expiry_time": "https://example.org/claims/expiry_time",
+      "method_class": "https://example.org/claims/method_class"
+    }
+  ],
+  "type": ["VerifiableCredential", "AgeOverCredential"],
+  "issuer": "did:example:issuer-hb2112",
+  "credentialSubject": {
+    "id": "did:example:holder",
+    "age_over": 18,
+    "jurisdiction": "US-AZ",
+    "method": "HB2112-digital-id",
+    "issue_time": "2025-01-01T00:00:00Z",
+    "expiry_time": "2026-01-01T00:00:00Z"
+  },
+  "evidence": [
+    {
+      "type": "HB2112AgeVerification",
+      "method_class": "HB2112-digital-id"
+    }
+  ],
+  "proof": {
+    "type": "Ed25519Signature2020",
+    "created": "2025-01-01T00:00:05Z",
+    "verificationMethod": "did:example:issuer-hb2112#key-1",
+    "proofPurpose": "assertionMethod",
+    "jws": "eyJhbGciOiJFZERTQSJ9..."
+  }
+}
