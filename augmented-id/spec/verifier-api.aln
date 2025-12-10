@@ -1,0 +1,42 @@
+aln spec augmented_id.verifier_api.v1
+
+  endpoint POST /hb2112/verify-age
+    input
+      field session_id string
+      field method string              # "digital_id" | "government_id" | "transactional_data"
+      field id_artifact bytes_optional # encrypted payload, TLS-protected
+      field transactional_metadata bytes_optional
+    end
+
+    processing
+      step "determine_age"
+        require method in ["digital_id","government_id","transactional_data"]
+        perform kyc_age_check(method, id_artifact, transactional_metadata)
+        output age_years uint8, jurisdiction_code string, assurance_level string
+      end
+
+      step "issue_vc"
+        require age_years >= 18
+        create AgeOverCredential {
+          subject_id = wallet_did
+          age_over = 18
+          jurisdiction = jurisdiction_code
+          method = "HB2112-" + method
+          issue_time = now()
+          expiry_time = now_plus_years(2)
+          evidence.method_class = "HB2112-" + method
+        }
+      end
+
+      step "delete_artifacts"
+        require issuer.store.raw_id false
+        delete id_artifact, transactional_metadata
+      end
+    end
+
+    output
+      field vc AgeOverCredential
+    end
+  end
+
+end
