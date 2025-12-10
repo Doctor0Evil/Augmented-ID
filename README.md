@@ -8,207 +8,75 @@
 
 <img src="https://r2cdn.perplexity.ai/pplx-full-logo-primary-dark%402x.png" style="height:64px;margin-right:32px"/>
 
-***
-
-GitHub-Solutions provides a robust framework combining ALN (Advanced Language Notation) governance, comprehensive CI/CD workflows, and supporting Node.js + PowerShell tooling designed to elevate GitHub platform capabilities and community collaboration.
-
-Our objective is to enforce strict compliance, streamline project workflows, and empower developers with advanced validation and governance tools — improving stability, security, and collaboration across GitHub ecosystems.
-![CI](https://github.com/Doctor0Evil/Github-Solutions/actions/workflows/ci.yml/badge.svg)
-
-## Core Structure Overview
-
-- **`aln/`** — Central repository for source ALN bundles and governance documentation, defining rules and policies for ALN language compliance.
-- **`aln-json/`** — Auto-generated JSON schema projections derived from ALN sources for validation and interoperability.
-- **`schemas/`** — JSON Schema definitions used by the Ajv library for rigorous data validation across ALN projects.
-- **`scripts/`** — Collection of Node.js and PowerShell helper scripts:
-  - ALN-to-JSON projection and mesh validation tooling.
-  - Severity gate enforcement to ensure compliance thresholds.
-  - Copilot metaprompt governance validation.
-  - WASM inspection and environment bootstrap utilities.
-- **`.github/workflows/`** — GitHub Actions workflows for ALN validation, firmware simulation, VM validation, copilot governance, telemetry export, and staged firmware rollouts.
-
-## Local Development and Automation
-
-### Node.js Environment
-
-A minimal `package.json` scripts setup enables running core ALN tasks:
-
-```jsonc
-{
-  "scripts": {
-    "aln:projection": "node scripts/aln-to-json-projection.cjs",
-    "aln:validate": "node scripts/aln-ajv-mesh-sweep.cjs",
-    "aln:severity-gate": "node scripts/aln-severity-gate.cjs",
-    "aln:metatest": "node scripts/aln-copilot-metatest.cjs"
-  }
-}
-```
-
-To get started locally:
-
-```powershell
-cd path\to\Github-Solutions
-npm install
-npm run aln:projection
-npm run aln:validate
-npm run aln:severity-gate
-npm run aln:metatest
-```
-
-### PowerShell Utilities
-
-- **AutoFix-Npm.ps1**  
-Ensures Node.js, npm, and winget are installed and runs ALN validations:
-
-```powershell
-pwsh -File scripts/AutoFix-Npm.ps1 -RepoPath "path\to\Github-Solutions"
-```
-
-Use `-SkipInstall` flag if dependencies are already installed.
-
-- **GitHub-Platform-Improvements.ps1**  
-Bootstraps the environment by configuring git, GitHub CLI, Node.js, and .NET, adding helper functions for smoother development:
-
-```powershell
-pwsh -File scripts/GitHub-Platform-Improvements.ps1 -RepoPath "$PWD" -UserName "Your Name" -UserEmail "you@example.com"
-```
-
-Provides utilities like `Invoke-GitCommitPush`, `Invoke-GitHubAuth`, and `Show-GitHubRepoInfo`.
-
-- **Inspect-Wasm.ps1**  
-Inspect WebAssembly binaries (requires `wasm-objdump` in PATH):
-
-```powershell
-pwsh -File scripts/Inspect-Wasm.ps1 -WasmPath build/module.wasm
-```
-
-## Continuous Integration Workflows
-
-Prebuilt GitHub Actions workflows automate critical validation steps including:
-
-- ALN core language validation and restrictions on Python usage (`aln-ci-core.yml`).
-- Hardware simulation matrix validation for device twin firmware (`aln-device-twin-ci.yml`).
-- Virtual machine bootstrap validation (`aln-vm-bootstrap-validate.yml`).
-- Repository policy and Copilot metaprompt governance (`aln-copilot-governance.yml`).
-- Telemetry data export aggregation (`aln-telemetry-export.yml`).
-- Controlled staged firmware update rollout lanes (`aln-firmware-update-lane.yml`).
-
-## Governance and Security
-
-- Strict enforcement banning Python runtimes in CI to avoid unpredictable runtime behavior.
-- Severity gate policy with critical violation failure and a configurable cap for warning levels.
-- Copilot metaprompt governance ensures presence of mandatory governance commands for safety.
-- Immutable blockchain-secured audit trails ensure tamper-proof compliance logs.
-
-## Recommended Local Workflow
-
-1. Bootstrap your environment with environment improvements:
-
-```powershell
-pwsh -File scripts/GitHub-Platform-Improvements.ps1 -RepoPath "$PWD" -UserName "Dev" -UserEmail "dev@example.com"
-```
-
-2. Install dependencies and validate ALN bundles:
-
-```powershell
-npm install
-npm run aln:projection
-npm run aln:validate
-npm run aln:severity-gate
-```
-
-3. Run metaprompt governance tests:
-
-```powershell
-npm run aln:metatest
-```
-
-## ALN Test Harness & Self-Tests
-
-The project uses an ALN cross-runtime harness that does not require Node/Python/.NET to be installed. Use these commands to run the canonical tests and harness self-checks:
-
-Windows (PowerShell):
-```powershell
-pwsh -File .aln\run-tests.ps1
-```
-
-Linux/WSL:
-```bash
-chmod +x .aln/run-tests.sh .aln/tools/validate-aln.sh
-./.aln/run-tests.sh
-```
-
-Harness self-tests (simulate missing runtimes):
-```bash
-chmod +x .aln/tests/test-crossruntime-harness.sh
-./.aln/tests/test-crossruntime-harness.sh
-```
-
-PowerShell harness self-test:
-```powershell
-pwsh -File .aln\tests\Test-CrossRuntimeHarness.ps1
-```
-
-## Troubleshooting Tips
-
-- If `npm` commands are not recognized after automatic installation, restart your PowerShell window to refresh the environment variables.
-- For Ajv JSON schema validation errors, check detailed error reports in `reports/aln-constraint-report.json`.
-- Use `Inspect-Wasm.ps1` to debug WebAssembly binary issues during simulation pipeline additions.
-
-### Godot GDScript LSP Fix
-
-If your IDE shows the "Couldn't connect to the GDScript language server at 127.0.0.1:6008" error, run the helper script to diagnose and apply local fixes:
-
-```powershell
-node scripts/fix-godot-lsp.cjs --diagnostics
-node scripts/fix-godot-lsp.cjs --apply
-```
-
-The script will check ports (6008 and 6005), detect reachable ones, update `.vscode/settings.json`, add a safe `.vscode/launch.json` profile to launch Godot with `--lang_server`, and write a sample Neovim snippet.
-If you'd like to standardize a port across the repo, run:
-
-```powershell
-node scripts/fix-godot-lsp.cjs --force-port 6008 --save-config --apply
-```
-
-Use `--ci-fail` in CI to validate changes on PRs:
-
-```powershell
-node scripts/fix-godot-lsp.cjs --ci-fail
-```
-For copy-pasteable ops commands (netstat/ss, Godot CLI invocation, firewall commands), see `docs/drift/GODOT_LSP_OPS.md`.
-Also the CI diagnostics action (`.github/workflows/godot-lsp-diagnostics.yml`) validates Godot LSP configs on PRs that touch `*.tres` or `.vscode/`.
-
-## Future Enhancements (Planned)
-
-- Artifact uploads for telemetry and WASM logs integrated into firmware/twin workflows.
-- Replacement of regex-based ALN parsers with full-featured, syntax-correct parsers.
-- Secure signing and verification workflows added for firmware images to enhance integrity guarantees.
+Augmented-ID is a standards-based, cross-platform age-verification and DID credential wallet that automates 18+ checks with strong privacy guarantees and no repeated selfies or document uploads. It is designed to plug into any browser, app, or platform as a “yes/no” age oracle that satisfies laws like Arizona HB2112 while reducing data exposure for everybody.[1][2][3][4]
 
 ***
 
-This README.md is designed to empower developers and maintainers with comprehensive, enforceable governance and tooling for ALN-based projects on GitHub, strengthening workflows, security, and collaboration for the broader GitHub community and enterprise ecosystems.
+# Augmented-ID
 
-For more, explore GitHub's built-in collaboration features, advanced security integrations, and automation tools that support agile, secure development and deployment [GitHub Overview].[14][15][17]
+Augmented-ID is a Web5-style decentralized identity and age-verification layer that issues, stores, and presents cryptographic “age over X in jurisdiction Y” credentials. It focuses on removing friction and invasive checks from age gates while giving regulators and platforms stronger, auditable assurances than current selfie/ID upload flows.[2][5][6][1]
 
-***
+## Core features
 
-## Drift detection prototypes
+- **Automated age verification**  
+  - One-time onboarding using compliant methods (digital ID or approved third-party checks).  
+  - After onboarding, all age checks are performed automatically in the background or via one-click consent; no repeated uploads or CAPTCHAs.[3][1]
 
-This repo now contains a prototype of drift detection and incremental analysis features in `src/drift` and `src/lsp`.
+- **Decentralized identity (DID) wallet**  
+  - Stores W3C DID-based verifiable credentials proving “age ≥ threshold” and jurisdiction attributes.  
+  - Uses pairwise pseudonymous identifiers so each site or app sees a different DID, preventing cross-site tracking.[1]
 
-Key files:
-- `src/drift/dependency-graph.ts`: module/file dependency graph with reverse closure for impacted file analysis.
-- `src/drift/test-impact.ts`: test-impact analyzer combining coverage and historical failure data to score impacted tests.
-- `src/drift/cache-key.ts`: cache key generation for analysis/build tools by mixing content, config, tool versions and dependency signatures.
-- `src/lsp/semantic-drift.ts`: example LSP diagnostic skeleton for semantic drift heuristics.
-- `scripts/semgrep/semantic-drift-rules.yml`: sample semgrep rules that can be used in CI to detect control-flow regressions.
+- **Zero-knowledge and minimal disclosure**  
+  - Sites receive only a signed assertion like “adult in AZ” bound to their domain and a short expiry, not date of birth or legal name.  
+  - Optional zero-knowledge proofs allow age-over-threshold verification without revealing any underlying age data.[7][1]
 
-Run the tests after installing dependencies:
-```powershell
-npm ci
-npm test
-```
+- **Regulation-aware by design**  
+  - Maps directly onto HB2112’s “digital identification” / “commercially reasonable” verification methods while honoring the statute’s explicit ban on retention of identifying information.[2][3]
+  - Extensible policy engine for other age-verification laws and sectoral rules worldwide.[5]
 
-The CI workflow skeleton is in `.github/workflows/drift-check.yml` and demonstrates lint, unit tests, and drift checks.
+- **Augmented- and accessibility-friendly**  
+  - Supports AI-augmented and BCI users by treating neural/biometric signals strictly as local unlock factors; only standard cryptographic tokens ever leave the device.[8][9]
+  - Replaces hostile “are you human?” copy with neutral, rights-focused language and simplifies flows for neurodivergent and disabled users.[10]
 
+## How it works
+
+1. **Enrollment**  
+   - The user chooses a compliant verifier (e.g., government ID-based, or transactional-data-based service) in their jurisdiction.  
+   - The verifier checks age according to local law, then issues a signed age credential (a verifiable credential) to the user’s Augmented-ID wallet and deletes raw ID inputs as required by HB2112-type no-retention rules.[6][2]
+
+2. **Local storage and unlocking**  
+   - Credentials are encrypted and stored on the user’s device (or user-controlled secure storage), never on-chain.  
+   - Optional local factors (PIN, device biometrics, or privacy-preserving BCI unlock) are used only to access the wallet, not as remote identifiers.[9][8]
+
+3. **On access to restricted content**  
+   - A site or app integrates a small client library or extension hook that, when harmful or age-gated material is requested, asks the wallet:  
+     - `isAdult(jurisdiction, site_origin)`  
+   - The wallet evaluates policy and, if appropriate, returns a signed, short-lived “adult” token bound to `site_origin` and a nonce.  
+   - The site verifies the signature with known issuer keys and decides allow/deny without ever seeing personal identity data.[11][1]
+
+4. **Audit and compliance**  
+   - Sites and verifiers keep only non-identifying event logs (e.g., hashed token IDs, status, jurisdiction), enabling proof of compliance to regulators without any retained PII, in line with HB2112 and similar statutes.[6][2]
+
+## Integration targets
+
+Augmented-ID is built to be environment-agnostic:
+
+- **Web browsers** – extensions or native browser APIs (where available) to expose the `isAdult` call to scripts and service workers.[1]
+- **Mobile and desktop apps** – SDKs wrapping the same protocol for native platforms.  
+- **Smart TVs, consoles, and kiosks** – embedded or WebView-based integrations that use local wallets or hardware tokens.[12]
+- **Smart city and public systems** – portals, public Wi-Fi, and digital kiosks use the same credential to enforce age gates without learning or storing citizen identity details.[10][12]
+
+## Security and privacy principles
+
+- **No central identity store** – all age credentials live in user-held wallets; issuers only keep what is required for their own regulatory compliance.[5][1]
+- **No biometric/BCI data in transit** – EEG/BCI and other biosignals never leave the device; they are used only to decrypt or unlock keys locally.[8][9]
+- **Short-lived, domain-bound tokens** – each access proof is unique, time-limited, and tied to a specific origin, preventing replay and token sharing.[1]
+- **Compliance-first logging** – logs are designed to demonstrate that a lawful check occurred without creating new surveillance or breach risks.[2][6]
+
+## Goals
+
+Augmented-ID aims to:
+
+- Make underage access to restricted content significantly harder by relying on cryptographically strong, once-verified credentials instead of weak UI gates.[13][1]
+- Reduce the privacy and dignity costs of compliance for adults, especially those who are AI-augmented or otherwise marginalized by today’s age-gating designs.[3][10]
+- Provide regulators and operators with a practical, interoperable path that is strictly as protective as laws like HB2112 require—while being measurably safer and less intrusive than ID-upload or selfie-based systems.[14][2]
