@@ -1,0 +1,26 @@
+aln policy augmented_id.constraints.v1
+  # HB2112-compliant input methods [file:1]
+  require age_verification.input in ["digital_id", "government_id", "commercially_reasonable_transactional_data"]
+
+  # Prohibit retention of raw IDs beyond issuance [file:1]
+  require issuer.store.raw_id false
+  require issuer.delete.raw_id_on_issuance true
+  require issuer.store_only "pseudonymous_holder_did", "method_class", "issue_time", "expiry_time", "non_identifying_audit_hash"
+
+  # Relying parties may only receive minimal attestation [file:1]
+  deny relying_party.receive_fields ["full_name", "dob", "address", "id_number", "document_images", "raw_biometric", "raw_bci"]
+  allow relying_party.receive_fields ["jurisdiction_code", "age_threshold_satisfied", "method_class", "issuer_hint", "token_id"]
+
+  # BCI/EEG signals: local unlock only, never network credentials [file:1]
+  require bci.raw_stream.leave_device false
+  require bci.raw_features.leave_device false
+  require bci.role "local_unlock_factor"
+  deny bci.use_as "network_credential"
+  deny bci.use_as "remote_identifier"
+
+  # Auditability: non-identifying logs per access [file:1]
+  require audit.log_per_access true
+  require audit.log_fields ["hashed_token_id", "jurisdiction_code", "method_class", "decision", "timestamp"]
+  deny audit.log_fields ["full_name", "dob", "document_number", "holder_global_did", "ip_address", "device_fingerprint"]
+
+end
