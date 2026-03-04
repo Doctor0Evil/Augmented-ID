@@ -1,0 +1,126 @@
+-- ============================================================================
+-- FILE: vc.identity.v1.aln
+-- NAMESPACE: AugID.VC.Identity
+-- VERSION: 1.0.0
+-- DESCRIPTION: Base identity VC (age, residency, citizenship attestations)
+-- ANCHOR: ROWRPM shard linked to AugmentedCitizenID
+-- ============================================================================
+
+namespace AugID.VC.Identity v1
+
+-- Import core ALN primitives
+import ALN.Core v1
+import ALN.Crypto v1
+import AugID.VC.Core v1
+
+-- ============================================================================
+-- RECORD: IdentityVC
+-- PURPOSE: Basic identity attestations without exposing raw personal data
+-- INVARIANTS: Issuer-verified, time-limited, revocable
+-- ============================================================================
+
+record IdentityVC extends VCCoreEnvelope
+  -- Override schemaref
+  schemaref = "au.vc.identity.v1"
+  
+  -- Payload fields (identity attestations)
+  attestation_type    enum      -- AgeOver18, AgeOver21, Residency, Citizenship, NameVerified
+  attestation_value   string    -- The attested value (e.g., "US", "Over21")
+  issuer_type         enum      -- Government, Financial, Educational, Healthcare, Employer
+  jurisdiction_code   string    -- ISO-style region identifier
+  valid_from          datetime  -- ISO-8601 timestamp
+  valid_until         datetime  -- ISO-8601 timestamp (required for identity VCs)
+  
+  -- Verification metadata
+  source_document_hash string   -- Hash of source document (passport, license, etc.)
+  verified_by         list<string>  -- List of DIDs who verified this attestation
+  
+  -- Rights envelope
+  rights_envelope_ref string    -- Neurorights constraints for this VC
+
+-- ============================================================================
+-- RECORD: IdentityVCRevocation
+-- PURPOSE: Explicit identity VC revocation (append-only)
+-- ============================================================================
+
+record IdentityVCRevocation extends VCRevocationEvent
+  vcid                string      -- Reference to original IdentityVC
+  schemaref           = "au.vc.identity.revoke.v1"
+  revocation_reason   enum      -- Expired, Compromised, Withdrawn, LegalOrder
+
+-- ============================================================================
+-- GUARD: IdentityVCGuard
+-- PURPOSE: Enforce identity VC invariants
+-- ============================================================================
+
+guard IdentityVCGuard extends VCCoreEnvelopeGuard
+  -- Compile-time invariants
+  invariant attestation_type_valid:
+    self.attestation_type in [
+      "AgeOver18", "AgeOver21", "Residency", "Citizenship", "NameVerified"
+    ]
+  
+  invariant issuer_type_valid:
+    self.issuer_type in [
+      "Government", "Financial", "Educational", "Healthcare", "Employer"
+    ]
+  
+  invariant jurisdiction_code_format:
+    self.jurisdiction_code =~ "^[A-Z]{2}(-[A-Z0-9]+)?$"
+  
+  invariant source_document_hash_format:
+    self.source_document_hash =~ "^sha256:[a-f0-9]{64}$"
+  
+  invariant valid_until_required:
+    -- Identity VCs must have expiry
+    self.valid_until is not None
+  
+  invariant valid_from_before_valid_until:
+    self.valid_from < self.valid_until
+  
+  invariant verified_by_minimum:
+    -- At least one verifier required
+    len(self.verified_by) >= 1
+  
+  -- Neurorights invariants
+  invariant no_score_from_inner_state:
+    rights_envelope = lookup_rights_envelope(self.rights_envelope_ref)
+    "no_score_from_inner_state" in rights_envelope.flags
+  
+  invariant no_exclusion_basic_services:
+    rights_envelope = lookup_rights_envelope(self.rights_envelope_ref)
+    "no_exclusion_basic_services" in rights_envelope.flags
+  
+  -- Runtime invariants
+  invariant attestation_not_expired:
+    now() <= self.valid_until
+
+-- ============================================================================
+-- FUNCTION: Identity VC Minimal Token Projection
+-- PURPOSE: Generate BfcToken.v1 view from IdentityVC (boolean only)
+-- ============================================================================
+
+function project_identity_token(vc: IdentityVC) -> map<string,any>
+  -- For age attestations, return boolean only (no exact age)
+  if vc.attestation_type in ["AgeOver18", "AgeOver21"]:
+    return {
+      "vc_type": "identity",
+      "attestation_type": vc.attestation_type,
+      "attestation_ok": true,  -- Boolean only, no value disclosure
+      "issuer_type": vc.issuer_type,
+      "valid_until": vc.valid_until,
+      "rights_header": lookup_rights_envelope(vc.rights_envelope_ref).flags
+    }
+  
+  -- For other attestations, return minimal info
+  return {
+    "vc_type": "identity",
+    "attestation_type": vc.attestation_type,
+    "attestation_value_hash": sha256(vc.attestation_value),
+    "issuer_type": vc.issuer_type,
+    "jurisdiction": vc.jurisdiction_code,
+    "valid_until": vc.valid_until,
+    "rights_header": lookup_rights_envelope(vc.rights_envelope_ref).flags
+  }
+
+-- END OF FILE
