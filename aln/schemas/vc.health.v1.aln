@@ -1,0 +1,100 @@
+-- ============================================================================
+-- FILE: vc.health.v1.aln
+-- NAMESPACE: AugID.VC.Health
+-- VERSION: 1.0.0
+-- DESCRIPTION: Health attestation VC (neurorights-safe, no diagnosis leakage)
+-- ANCHOR: ROWRPM shard linked to AugmentedCitizenID
+-- ============================================================================
+
+namespace AugID.VC.Health v1
+
+-- Import core ALN primitives
+import ALN.Core v1
+import AugID.VC.Core v1
+
+-- ============================================================================
+-- RECORD: HealthVC
+-- PURPOSE: Minimal health proof without inner-state or diagnosis leakage
+-- INVARIANTS: No raw medical data, aggregate bands only
+-- ============================================================================
+
+record HealthVC extends VCCoreEnvelope
+  -- Override schemaref
+  schemaref = "au.vc.health.v1"
+  
+  -- Payload fields (aggregate bands only, no diagnoses)
+  fitness_band          enum      -- Fit, Limited, NotFit, Unknown
+  interaction_risk_band enum      -- Low, Medium, High, Unknown (infection control)
+  workload_corridor_ref string    -- Optional ref to safe hours/intensity ALN object
+  vaccination_status_band enum    -- UpToDate, Partial, NotRecorded
+  
+  -- Data scope constraint
+  data_scope            enum      -- AggregateOnly, LabSummary, ClinicEpisode
+  
+  -- Rights envelope (neurorights constraints for this VC)
+  rights_envelope_ref   string    -- Asserts noscorefrominnerstate, noneurocoercion
+
+-- ============================================================================
+-- RECORD: HealthVCRevocation
+-- PURPOSE: Explicit health VC revocation (append-only)
+-- ============================================================================
+
+record HealthVCRevocation extends VCRevocationEvent
+  vcid                string      -- Reference to original HealthVC
+  schemaref           = "au.vc.health.revoke.v1"
+
+-- ============================================================================
+-- GUARD: HealthVCGuard
+-- PURPOSE: Enforce health VC invariants and neurorights constraints
+-- ============================================================================
+
+guard HealthVCGuard extends VCCoreEnvelopeGuard
+  -- Compile-time invariants
+  invariant no_diagnosis_fields:
+    -- Ensure no diagnosis, condition, or treatment fields exist
+    self.payload.keys() not_contains_any ["diagnosis", "condition", "treatment", "icd_code"]
+  
+  invariant fitness_band_valid:
+    self.fitness_band in ["Fit", "Limited", "NotFit", "Unknown"]
+  
+  invariant interaction_risk_band_valid:
+    self.interaction_risk_band in ["Low", "Medium", "High", "Unknown"]
+  
+  invariant vaccination_status_band_valid:
+    self.vaccination_status_band in ["UpToDate", "Partial", "NotRecorded"]
+  
+  invariant data_scope_restrictive:
+    self.data_scope in ["AggregateOnly", "LabSummary", "ClinicEpisode"]
+  
+  -- Neurorights invariants
+  invariant noscorefrominnerstate_asserted:
+    rights_envelope = lookup_rights_envelope(self.rights_envelope_ref)
+    "noscorefrominnerstate" in rights_envelope.flags
+  
+  invariant noneurocoercion_asserted:
+    rights_envelope = lookup_rights_envelope(self.rights_envelope_ref)
+    "noneurocoercion" in rights_envelope.flags
+  
+  -- Runtime invariants
+  invariant valid_until_required_for_dynamic:
+    -- Dynamic risk assessments must have expiry
+    if self.interaction_risk_band != "Unknown":
+      self.valid_until is not None
+
+-- ============================================================================
+-- FUNCTION: Health VC Minimal Token Projection
+-- PURPOSE: Generate BfcToken.v1 view from HealthVC (minimal disclosure)
+-- ============================================================================
+
+function project_health_token(vc: HealthVC) -> map<string,any>
+  -- Returns minimal token for verifier consumption
+  return {
+    "vc_type": "health",
+    "fitness_ok": vc.fitness_band == "Fit",
+    "interaction_risk": vc.interaction_risk_band,
+    "valid_until": vc.valid_until,
+    "issuer_did_hash": sha256(vc.issuer_did),  -- Pseudonymous issuer
+    "rights_header": lookup_rights_envelope(vc.rights_envelope_ref).flags
+  }
+
+-- END OF FILE
