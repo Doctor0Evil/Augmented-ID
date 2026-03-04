@@ -1,0 +1,98 @@
+-- ============================================================================
+-- FILE: vc.license.v1.aln
+-- NAMESPACE: AugID.VC.License
+-- VERSION: 1.0.0
+-- DESCRIPTION: License/credential VC (driver, professional, merchant, civic)
+-- ANCHOR: ROWRPM shard linked to AugmentedCitizenID
+-- ============================================================================
+
+namespace AugID.VC.License v1
+
+-- Import core ALN primitives
+import ALN.Core v1
+import AugID.VC.Core v1
+
+-- ============================================================================
+-- RECORD: LicenseVC
+-- PURPOSE: General license or registration proof without legacy ID copying
+-- INVARIANTS: Status changes via new rows only, no in-place overwrite
+-- ============================================================================
+
+record LicenseVC extends VCCoreEnvelope
+  -- Override schemaref
+  schemaref = "au.vc.license.v1"
+  
+  -- Payload fields
+  license_type          enum      -- Driver, Professional, Merchant, CivicVolunteer
+  license_class         string    -- e.g., "C", "RN", "ElectricianLevel2"
+  jurisdiction_code     string    -- ISO-style or ALN-style region identifier
+  status                enum      -- Active, Suspended, Expired, Revoked
+  conditions            list<string>  -- Optional short codes (e.g., "NoNightDriving")
+  
+  -- Legacy system linkage (hash only, never clear text)
+  legacy_identifier_hash string   -- Hash of legacy license number
+  
+  -- Rights envelope
+  rights_envelope_ref   string    -- Neurorights/anti-stigma constraints
+
+-- ============================================================================
+-- RECORD: LicenseVCUpdate
+-- PURPOSE: Status update record (append-only, never modifies original)
+-- ============================================================================
+
+record LicenseVCUpdate
+  entryid               string
+  vcid                  string      -- Reference to original LicenseVC
+  new_status            enum      -- Active, Suspended, Expired, Revoked
+  updated_at            datetime
+  author_did            string
+  signature             string
+  antirollback          bool      -- MUST be true
+
+-- ============================================================================
+-- GUARD: LicenseVCGuard
+-- PURPOSE: Enforce license VC invariants
+-- ============================================================================
+
+guard LicenseVCGuard extends VCCoreEnvelopeGuard
+  -- Compile-time invariants
+  invariant license_type_valid:
+    self.license_type in ["Driver", "Professional", "Merchant", "CivicVolunteer"]
+  
+  invariant status_enum_valid:
+    self.status in ["Active", "Suspended", "Expired", "Revoked"]
+  
+  invariant jurisdiction_code_format:
+    self.jurisdiction_code =~ "^[A-Z]{2}(-[A-Z0-9]+)?$"
+  
+  invariant legacy_hash_present:
+    self.legacy_identifier_hash is not None and len(self.legacy_identifier_hash) == 64
+  
+  -- Status transition invariants (forward-only)
+  invariant no_status_revival:
+    -- Once Revoked or Expired, cannot return to Active
+    if prev_record.status in ["Revoked", "Expired"]:
+      self.new_status != "Active"
+  
+  -- Neurorights invariants
+  invariant no_exclusion_basic_services:
+    rights_envelope = lookup_rights_envelope(self.rights_envelope_ref)
+    "no_exclusion_basic_services" in rights_envelope.flags
+
+-- ============================================================================
+-- FUNCTION: License VC Minimal Token Projection
+-- PURPOSE: Generate BfcToken.v1 view from LicenseVC
+-- ============================================================================
+
+function project_license_token(vc: LicenseVC) -> map<string,any>
+  return {
+    "vc_type": "license",
+    "license_type": vc.license_type,
+    "license_class": vc.license_class,
+    "status": vc.status,
+    "jurisdiction": vc.jurisdiction_code,
+    "valid_until": vc.valid_until,
+    "rights_header": lookup_rights_envelope(vc.rights_envelope_ref).flags
+  }
+
+-- END OF FILE
