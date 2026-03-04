@@ -1,0 +1,132 @@
+-- ============================================================================
+-- FILE: id.augmented.citizen.v1.aln
+-- NAMESPACE: AugID.Citizen
+-- VERSION: 1.0.0
+-- DESCRIPTION: Soul-bound identity shard for augmented citizens
+-- ANCHOR: Organichain / ROWRPM / Bostrom DID
+-- ============================================================================
+
+namespace AugID.Citizen v1
+
+-- Import core ALN primitives
+import ALN.Core v1
+import ALN.Crypto v1
+import ALN.HashRef v1
+import ALN.CodeAnchor v1
+
+-- ============================================================================
+-- RECORD: AugmentedCitizenID
+-- PURPOSE: Immutable, append-only identity anchor for augmented citizens
+-- INVARIANTS: antirollback=true, no in-place updates, forward-only evolution
+-- ============================================================================
+
+record AugmentedCitizenID
+  -- Core identity fields
+  did                 string      -- Bostrom-based DID (e.g., bostrom18...)
+  legalnamehash       string      -- HashRef-resolved, non-blacklisted primitive
+  birthregioncode     string      -- Coarse region only (e.g., "US-AZ")
+  
+  -- Biometric binding (pointer only, never raw data)
+  biometricbindingid  string      -- Reference to encrypted local vault
+  
+  -- Ledger anchoring
+  organichainroot     string      -- Last anchored Organichain snapshot ID
+  rowledgerroot       string      -- ROWRPM shard Merkle root for this DID
+  
+  -- Temporal and state fields
+  createdat           datetime    -- ISO-8601 timestamp of creation
+  antirollback        bool        -- MUST be true in all valid records
+  status              enum        -- Lifecycle status: Active, Suspended, Revoked
+  
+  -- Neurorights envelope (hard-coded constraints)
+  neurightsflags      list<string>  -- e.g., ["no_exclusion_basic_services", 
+                                    --      "no_score_from_inner_state",
+                                    --      "revocable_at_will"]
+  
+  -- Provenance tracking
+  originspan          string      -- OriginSpan reference for audit trail
+  rowsoilremediation  string      -- RowSoilRemediation hash for compliance
+
+-- ============================================================================
+-- RECORD: AugmentedCitizenIDUpdate
+-- PURPOSE: Append-only update record (never modifies original)
+-- INVARIANTS: prev_entry_id must link to immediate predecessor
+-- ============================================================================
+
+record AugmentedCitizenIDUpdate
+  entryid             string      -- Unique row/entry identifier
+  prev_entry_id       string      -- MUST link to immediate previous entry
+  citizenref          string      -- Reference to base AugmentedCitizenID.did
+  updatedfields       map<string,any>  -- Fields being updated (new values only)
+  updatedat           datetime    -- ISO-8601 timestamp
+  author_did          string      -- DID of entity authorizing update
+  signature           string      -- Ed25519 signature over entry contents
+  antirollback        bool        -- MUST be true
+  
+-- ============================================================================
+-- RECORD: AugmentedCitizenIDRevocation
+-- PURPOSE: Explicit revocation event (irreversible)
+-- INVARIANTS: Once revoked, cannot return to Active or Suspended
+-- ============================================================================
+
+record AugmentedCitizenIDRevocation
+  entryid             string
+  citizenref          string
+  revocationreason    enum        -- Voluntary, Compromised, LegalOrder, Deceased
+  revokedat           datetime
+  author_did          string      -- Must be citizen DID or governance multisig
+  signature           string
+  antirollback        bool        -- MUST be true
+
+-- ============================================================================
+-- GUARD: AugmentedCitizenIDGuard
+-- PURPOSE: Enforce schema invariants at compile and runtime
+-- ============================================================================
+
+guard AugmentedCitizenIDGuard
+  -- Compile-time invariants
+  invariant antirollback_must_be_true:
+    self.antirollback == true
+  
+  invariant status_enum_valid:
+    self.status in ["Active", "Suspended", "Revoked"]
+  
+  invariant did_format_valid:
+    self.did =~ "^bostrom1[a-z0-9]{38}$"
+  
+  invariant neurights_flags_present:
+    "no_exclusion_basic_services" in self.neurightsflags
+    "no_score_from_inner_state" in self.neurightsflags
+    "revocable_at_will" in self.neurightsflags
+  
+  -- Runtime invariants (ROWRPM ledger enforcement)
+  invariant no_status_downgrade:
+    -- Once Revoked, never Active or Suspended
+    if prev_record.status == "Revoked":
+      self.status != "Active" and self.status != "Suspended"
+  
+  invariant prev_entry_chain_valid:
+    -- For update records, prev_entry_id must match previous entry
+    if self is AugmentedCitizenIDUpdate:
+      self.prev_entry_id == prev_record.entryid
+
+-- ============================================================================
+-- SCHEMA ANCHOR: Organichain Binding
+-- ============================================================================
+
+anchor AugmentedCitizenID to Organichain
+  anchor_method: CodeAnchor
+  anchor_frequency: per_update
+  snapshot_hash_field: organichainroot
+  reconciliation: forward_only_append
+
+-- ============================================================================
+-- BLACKLIST CHECK: Non-blacklisted primitives only
+-- ============================================================================
+
+blacklist_check AugmentedCitizenID
+  check_field: legalnamehash
+  resolver: HashRef.resolve_non_blacklisted()
+  action_on_violation: REJECT_RECORD
+
+-- END OF FILE
