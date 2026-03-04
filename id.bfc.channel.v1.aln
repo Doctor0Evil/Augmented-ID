@@ -1,0 +1,12 @@
+namespace AugID.BFC v1
+
+record BoundedForwardChannel
+  channelid       string
+  didowner        string       -- citizen DID
+  patternid       string       -- CyberKubePattern id
+  mobilityscope   enum ONBODY, LOCALCELL, FEDERATED
+  topology        enum STAR, MESH
+  maxhops         u8
+  jittermaxms     u32
+  offlinesnapshothash string   -- HashRef to ID snapshot
+  safetytag       string       -- links to RoH / neurorights corridor
