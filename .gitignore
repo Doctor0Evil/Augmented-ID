@@ -1,0 +1,84 @@
+# Rust
+/target/
+**/target/
+/Cargo.lock
+**/Cargo.lock
+*.rs.bk
+*.pdb
+
+# ALN Compiled
+/compiled/
+*.aln.compiled
+*.aln.bc
+
+# Build artifacts
+/build/
+/dist/
+*.o
+*.a
+*.so
+*.dylib
+*.dll
+*.exe
+
+# IDE
+/.idea/
+/.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Test artifacts
+/test_results/
+*.coverage
+*.gcda
+*.gcno
+coverage/
+
+# Secrets and keys
+/*.key
+/*.pem
+/*.crt
+/*.p12
+/*.pfx
+secrets/
+keys/
+*.env
+.env.local
+.env.production
+
+# Logs
+*.log
+logs/
+
+# Temporary files
+/tmp/
+/temp/
+*.tmp
+*.temp
+
+# Documentation build
+/docs/_build/
+/docs/build/
+
+# Node modules (if any JS tooling)
+/node_modules/
+
+# Python (if any tooling)
+/__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+
+# Backup files
+*.bak
+*.backup
+*.old
+
+# OS files
+Thumbs.db
+.DS_Store
+.Spotlight-V100
+.Trashes
