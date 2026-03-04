@@ -1,0 +1,12 @@
+namespace AugID.Citizen v1
+
+record AugmentedCitizenID
+  did                 string      -- e.g. bostrom18...
+  legalnamehash       string      -- hashed, non-blacklisted primitive via HashRef
+  birthregioncode     string      -- coarse region only
+  biometricbindingid  string      -- pointer into offline biometric vault, not raw data
+  organichainroot     string      -- last anchored Organichain snapshot id
+  rowledgerroot       string      -- ROW RPM shard root for this DID
+  createdat           datetime
+  antirollback        bool        -- must be true in all valid records
+  status enum Active, Suspended, Revoked
