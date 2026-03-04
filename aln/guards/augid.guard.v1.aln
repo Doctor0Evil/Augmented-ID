@@ -1,0 +1,241 @@
+-- ============================================================================
+-- FILE: augid.guard.v1.aln
+-- NAMESPACE: AugID.Guard
+-- VERSION: 1.0.0
+-- DESCRIPTION: Core guard definitions for Augmented-ID system invariants
+-- ANCHOR: ROWRPM / Organichain / CyberKube
+-- ============================================================================
+
+namespace AugID.Guard v1
+
+-- Import core ALN primitives
+import ALN.Core v1
+import ALN.Crypto v1
+import AugID.Citizen v1
+import AugID.VC.Core v1
+import AugID.BFC v1
+
+-- ============================================================================
+-- GUARD: AugFingerprintGuard
+-- PURPOSE: Enforce neurorights flags and biophysical state safety bands
+-- INVARIANTS: No operation without neurorights, no CONFIRMED without safe state
+-- ============================================================================
+
+guard AugFingerprintGuard
+  -- Compile-time invariants
+  invariant neurorights_flags_required:
+    -- All identity operations must include neurorights flags
+    self.neurorights_flags is not None
+    len(self.neurorights_flags) >= 3
+  
+  invariant no_exclusion_basic_services_enforced:
+    "no_exclusion_basic_services" in self.neurorights_flags
+  
+  invariant no_score_from_inner_state_enforced:
+    "no_score_from_inner_state" in self.neurorights_flags
+  
+  invariant revocable_at_will_enforced:
+    "revocable_at_will" in self.neurorights_flags
+  
+  -- Biophysical state invariants (from local consent engine)
+  invariant healthy_engagement_band:
+    -- St/Lt (Stress/LifeForce) must be within HealthyEngagementBand for CONFIRMED
+    if self.consent_state == "CONFIRMED":
+      self.biophysical_state.St >= 0.3 and self.biophysical_state.St <= 0.7
+      self.biophysical_state.Lt >= 0.3 and self.biophysical_state.Lt <= 0.7
+  
+  invariant roh_limit_enforced:
+    -- Rate-of-Harm must not exceed 0.3
+    self.roh_current <= 0.3
+  
+  -- Runtime invariants
+  invariant consent_state_valid:
+    self.consent_state in ["CONFIRMED", "DENY", "SUSPENDED"]
+  
+  invariant no_confirmed_without_biometric:
+    -- CONFIRMED state requires successful local biometric match
+    if self.consent_state == "CONFIRMED":
+      self.biometric_match_verified == true
+  
+  invariant operation_blocked_on_suspended:
+    -- Suspended consent blocks all non-basic operations
+    if self.consent_state == "SUSPENDED":
+      self.operation_type in ["BasicService", "Emergency"]
+
+-- ============================================================================
+-- GUARD: EqualityPaymentGuard
+-- PURPOSE: Enforce payment caps and neurorights during transaction processing
+-- INVARIANTS: No payment without consent, no coercion via basic services
+-- ============================================================================
+
+guard EqualityPaymentGuard
+  -- Compile-time invariants
+  invariant spend_cap_enforced:
+    -- Transaction must not exceed configured spend cap
+    self.transaction_amount <= self.citizen_spend_cap
+  
+  invariant prompt_cap_enforced:
+    -- Transaction must not exceed prompt frequency cap
+    self.prompts_last_hour <= self.citizen_prompt_cap
+  
+  invariant no_basic_service_denial:
+    -- Basic services cannot be denied based on payment state
+    if self.service_class == "BasicService":
+      self.payment_required == false
+  
+  invariant neurorights_payment_flags:
+    "no_exclusion_basic_services" in self.neurorights_flags
+    "revocable_at_will" in self.neurorights_flags
+  
+  -- Runtime invariants
+  invariant consent_confirmed_for_payment:
+    -- Payment requires CONFIRMED consent state
+    if self.transaction_amount > 0:
+      self.consent_state == "CONFIRMED"
+  
+  invariant biometric_verified_for_payment:
+    -- Payment requires biometric verification
+    if self.transaction_amount > 0:
+      self.biometric_match_verified == true
+  
+  invariant transaction_logged_to_rowrpm:
+    -- All transactions logged to ROWRPM for audit
+    self.transaction_logged == true
+
+-- ============================================================================
+-- GUARD: AntiRollbackGuard
+-- PURPOSE: Enforce forward-only ledger semantics across all Augmented-ID operations
+-- INVARIANTS: No rollback, no reversal, no downgrade without explicit governance
+-- ============================================================================
+
+guard AntiRollbackGuard
+  -- Compile-time invariants
+  invariant antirollback_flag_true:
+    -- All records must have antirollback = true
+    self.antirollback == true
+  
+  invariant prev_entry_chain_valid:
+    -- For update records, prev_entry_id must link to immediate predecessor
+    if self is_update_record:
+      self.prev_entry_id == get_previous_entry_id(self.citizen_ref)
+  
+  invariant timestamp_monotonic:
+    -- Timestamps must be monotonically increasing
+    if self is_update_record:
+      self.timestamp > get_previous_entry_timestamp(self.citizen_ref)
+  
+  -- Status transition invariants (forward-only)
+  invariant status_no_revival:
+    -- Once Revoked, never return to Active or Suspended
+    if get_previous_status(self.citizen_ref) == "Revoked":
+      self.status != "Active" and self.status != "Suspended"
+  
+  invariant status_no_downgrade_without_governance:
+    -- Status can tighten without governance, but cannot loosen
+    if self.status is_less_restrictive_than(get_previous_status(self.citizen_ref)):
+      self.governance_event_required == true
+  
+  -- Runtime invariants
+  invariant rowrpm_chain_integrity:
+    -- ROWRPM chain must be unbroken
+    verify_rowrpm_chain(self.citizen_ref) == true
+  
+  invariant organichain_anchor_valid:
+    -- Organichain anchor must match committed snapshot
+    self.organichainroot == get_committed_snapshot_hash(self.citizen_ref)
+
+-- ============================================================================
+-- GUARD: OfflineOperationGuard
+-- PURPOSE: Enforce offline operation security constraints
+-- INVARIANTS: Snapshot validation, CodeAnchor verification, reconciliation rules
+-- ============================================================================
+
+guard OfflineOperationGuard
+  -- Compile-time invariants
+  invariant offlinesnapshothash_present:
+    self.offlinesnapshothash is not None and len(self.offlinesnapshothash) > 0
+  
+  invariant snapshot_hash_format:
+    self.offlinesnapshothash =~ "^sha256:[a-f0-9]{64}$"
+  
+  invariant snapshot_validity_window:
+    -- Offline snapshots have limited validity window
+    now() >= self.snapshot_valid_from
+    now() <= self.snapshot_valid_until
+  
+  -- Runtime invariants
+  invariant snapshot_signature_valid:
+    verify_signature(self.snapshot_signature, self.citizen_did, self.snapshot_hash) == true
+  
+  invariant codeanchor_reconciliation:
+    -- On reconnection, offline operations must reconcile with CodeAnchor
+    if network_available:
+      reconcile_with_organichain(self.offlinesnapshothash) == true
+  
+  invariant no_conflicting_offline_operations:
+    -- Detect and reject conflicting offline operations
+    detect_conflict(self.offline_operations_log) == false
+
+-- ============================================================================
+-- GUARD: BiometricVaultGuard
+-- PURPOSE: Enforce biometric vault security constraints (local-only matching)
+-- INVARIANTS: Raw biometric data never leaves device, matching happens locally
+-- ============================================================================
+
+guard BiometricVaultGuard
+  -- Compile-time invariants
+  invariant biometricbindingid_format:
+    self.biometricbindingid =~ "^vault:[a-f0-9]{64}$"
+  
+  invariant no_raw_biometric_in_record:
+    -- Ensure no raw biometric data in any record
+    self.record_fields not_contains_any ["biometric_raw", "biometric_template", "biometric_data"]
+  
+  invariant vault_encryption_required:
+    self.vault_encryption_algorithm in ["AES-256-GCM", "ChaCha20-Poly1305"]
+  
+  invariant vault_key_device_bound:
+    -- Vault key must be bound to device secure enclave
+    self.vault_key_location == "secure_enclave"
+  
+  -- Runtime invariants
+  invariant biometric_match_local_only:
+    -- Biometric matching must happen on-device
+    self.biometric_match_location == "local_device"
+  
+  invariant no_biometric_transmission:
+    -- Verify no biometric data in outgoing messages
+    outgoing_message_contains_biometric_data(self.outgoing_message) == false
+  
+  invariant signed_proof_only:
+    -- Only signed proof of match is transmitted
+    self.auth_proof_type == "signed_ok_failed_proof"
+
+-- ============================================================================
+-- FUNCTION: Verify All Guards (Composite Check)
+-- PURPOSE: Run all relevant guards for a given operation
+-- ============================================================================
+
+function verify_all_guards(operation: map<string,any>) -> bool
+  guards_to_run = []
+  
+  -- Determine which guards apply based on operation type
+  if operation.type == "identity_verification":
+    guards_to_run = ["AugFingerprintGuard", "AntiRollbackGuard"]
+  elif operation.type == "payment":
+    guards_to_run = ["EqualityPaymentGuard", "AugFingerprintGuard", "AntiRollbackGuard"]
+  elif operation.type == "offline_operation":
+    guards_to_run = ["OfflineOperationGuard", "AntiRollbackGuard"]
+  elif operation.type == "biometric_auth":
+    guards_to_run = ["BiometricVaultGuard", "AugFingerprintGuard"]
+  
+  -- Run all applicable guards
+  for guard_name in guards_to_run:
+    guard_result = run_guard(guard_name, operation)
+    if guard_result == false:
+      log_guard_failure(guard_name, operation)
+      return false
+  
+  return true
+
+-- END OF FILE
