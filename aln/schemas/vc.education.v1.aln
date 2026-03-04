@@ -1,0 +1,110 @@
+-- ============================================================================
+-- FILE: vc.education.v1.aln
+-- NAMESPACE: AugID.VC.Education
+-- VERSION: 1.0.0
+-- DESCRIPTION: Education credential VC (degrees, certifications, training)
+-- ANCHOR: ROWRPM shard linked to AugmentedCitizenID
+-- ============================================================================
+
+namespace AugID.VC.Education v1
+
+-- Import core ALN primitives
+import ALN.Core v1
+import ALN.Crypto v1
+import AugID.VC.Core v1
+
+-- ============================================================================
+-- RECORD: EducationVC
+-- PURPOSE: Verifiable education credential without exposing personal details
+-- INVARIANTS: Issuer-verified, non-transferable, revocable by issuer
+-- ============================================================================
+
+record EducationVC extends VCCoreEnvelope
+  -- Override schemaref
+  schemaref = "au.vc.education.v1"
+  
+  -- Payload fields (credential documentation)
+  credential_type     enum      -- Degree, Certificate, Diploma, License, Training
+  credential_level    enum      -- HighSchool, Associate, Bachelor, Master, Doctorate, Professional
+  field_of_study      string    -- General field (e.g., "Computer Science", "Medicine")
+  institution_name    string    -- Name of issuing institution
+  institution_did     string    -- DID of issuing institution
+  graduation_date     datetime  -- ISO-8601 date of completion
+  honors              string    -- Optional honors (e.g., "Cum Laude", "With Distinction")
+  
+  -- Verification metadata
+  accreditation_ref   string    -- Reference to accreditation body
+  credential_hash     string    -- Hash of original credential document
+  verified_by         list<string>  -- List of DIDs who verified this credential
+  
+  -- Rights envelope
+  rights_envelope_ref string    -- Neurorights constraints for this VC
+
+-- ============================================================================
+-- RECORD: EducationVCRevocation
+-- PURPOSE: Explicit education VC revocation (append-only)
+-- ============================================================================
+
+record EducationVCRevocation extends VCRevocationEvent
+  vcid                string      -- Reference to original EducationVC
+  schemaref           = "au.vc.education.revoke.v1"
+  revocation_reason   enum      -- Fraud, Error, InstitutionalClosure, LegalOrder
+
+-- ============================================================================
+-- GUARD: EducationVCGuard
+-- PURPOSE: Enforce education VC invariants
+-- ============================================================================
+
+guard EducationVCGuard extends VCCoreEnvelopeGuard
+  -- Compile-time invariants
+  invariant credential_type_valid:
+    self.credential_type in [
+      "Degree", "Certificate", "Diploma", "License", "Training"
+    ]
+  
+  invariant credential_level_valid:
+    self.credential_level in [
+      "HighSchool", "Associate", "Bachelor", "Master", "Doctorate", "Professional"
+    ]
+  
+  invariant institution_did_format:
+    self.institution_did =~ "^bostrom1[a-z0-9]{38}$"
+  
+  invariant credential_hash_format:
+    self.credential_hash =~ "^sha256:[a-f0-9]{64}$"
+  
+  invariant graduation_date_not_future:
+    self.graduation_date <= now()
+  
+  invariant verified_by_minimum:
+    -- At least one verifier required
+    len(self.verified_by) >= 1
+  
+  -- Neurorights invariants
+  invariant no_exclusion_basic_services:
+    rights_envelope = lookup_rights_envelope(self.rights_envelope_ref)
+    "no_exclusion_basic_services" in rights_envelope.flags
+  
+  -- Runtime invariants
+  invariant institution_accredited:
+    -- Institution must have valid accreditation reference
+    lookup_accreditation(self.accreditation_ref) is not None
+
+-- ============================================================================
+-- FUNCTION: Education VC Minimal Token Projection
+-- PURPOSE: Generate BfcToken.v1 view from EducationVC
+-- ============================================================================
+
+function project_education_token(vc: EducationVC) -> map<string,any>
+  return {
+    "vc_type": "education",
+    "credential_type": vc.credential_type,
+    "credential_level": vc.credential_level,
+    "field_of_study": vc.field_of_study,
+    "institution_name_hash": sha256(vc.institution_name),
+    "graduation_date": vc.graduation_date,
+    "verified": len(vc.verified_by) > 0,
+    "rights_header": lookup_rights_envelope(vc.rights_envelope_ref).flags
+  }
+
+-- END OF FILE
