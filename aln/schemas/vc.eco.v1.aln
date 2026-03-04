@@ -1,0 +1,143 @@
+-- ============================================================================
+-- FILE: vc.eco.v1.aln
+-- NAMESPACE: AugID.VC.Eco
+-- VERSION: 1.0.0
+-- DESCRIPTION: Eco-contribution VC (non-transferable, neurorights-safe)
+-- ANCHOR: ROWRPM shard linked to AugmentedCitizenID
+-- ============================================================================
+
+namespace AugID.VC.Eco v1
+
+-- Import core ALN primitives
+import ALN.Core v1
+import ALN.Crypto v1
+import AugID.VC.Core v1
+
+-- ============================================================================
+-- RECORD: EcoVC
+-- PURPOSE: Verifiable eco-positive contribution record (non-tradable)
+-- INVARIANTS: Non-transferable only, factual event log not changing balance
+-- ============================================================================
+
+record EcoVC extends VCCoreEnvelope
+  -- Override schemaref
+  schemaref = "au.vc.eco.v1"
+  
+  -- Payload fields (eco-action documentation)
+  eco_action_type       enum      -- DeviceRecycling, LowEnergyCommute, WaterRecharge,
+                                  -- BiopackReturn, PlasticAvoidance, TreePlanting
+  ecoimpactscore_delta  float     -- Normalized eco impact per EcoImpactScore semantics
+  embodied_units_averted float    -- e.g., kWh, kg CO₂e, plastics grams
+  ker_snapshot          record    -- K/E/R triple at time of action (Knowledge, Eco, Risk)
+  
+  -- KnowledgeCredit linkage (non-transferable)
+  kc_minted             uint64    -- KnowledgeCredit units minted (if any)
+  transferability       enum      -- MUST be "NonTransferable" only
+  usage_scope           enum      -- EligibilityOnly, DiscountEligibility, EcoGrantEligibility
+  
+  -- Verification metadata
+  verified_by           list<string>  -- List of DIDs (eco-oracle, recycling operator, etc.)
+  evidence_bundle_ref   string    -- Pointer to evidence shard (hashes only, under Rprivacy caps)
+  
+  -- Rights envelope
+  rights_envelope_ref   string    -- Neurorights constraints for this VC
+
+-- ============================================================================
+-- RECORD: EcoVCRevise
+-- PURPOSE: Correction record for measurement errors (append-only audit trail)
+-- INVARIANTS: Never deletes original, creates superseding record only
+-- ============================================================================
+
+record EcoVCRevise
+  entryid               string
+  original_vcid         string    -- Reference to original EcoVC
+  correction_reason     enum      -- MeasurementError, DuplicateEntry, DataCorruption
+  corrected_delta       float     -- New ecoimpactscore_delta value
+  corrected_at          datetime
+  author_did            string
+  signature             string
+  antirollback          bool      -- MUST be true
+
+-- ============================================================================
+-- GUARD: EcoVCGuard
+-- PURPOSE: Enforce eco VC invariants and non-transferability
+-- ============================================================================
+
+guard EcoVCGuard extends VCCoreEnvelopeGuard
+  -- Compile-time invariants
+  invariant eco_action_type_valid:
+    self.eco_action_type in [
+      "DeviceRecycling", "LowEnergyCommute", "WaterRecharge",
+      "BiopackReturn", "PlasticAvoidance", "TreePlanting"
+    ]
+  
+  invariant ecoimpactscore_delta_non_negative:
+    self.ecoimpactscore_delta >= 0.0
+  
+  invariant embodied_units_averted_non_negative:
+    self.embodied_units_averted >= 0.0
+  
+  invariant transferability_non_transferable:
+    -- HARD CONSTRAINT: Eco VCs cannot be tokenized or traded
+    self.transferability == "NonTransferable"
+  
+  invariant usage_scope_valid:
+    self.usage_scope in ["EligibilityOnly", "DiscountEligibility", "EcoGrantEligibility"]
+  
+  invariant kc_minted_non_negative:
+    self.kc_minted >= 0
+  
+  -- KER snapshot invariants
+  invariant ker_snapshot_complete:
+    self.ker_snapshot.knowledge is not None
+    self.ker_snapshot.eco is not None
+    self.ker_snapshot.risk is not None
+  
+  -- Neurorights invariants
+  invariant noscorefrominnerstate_asserted:
+    rights_envelope = lookup_rights_envelope(self.rights_envelope_ref)
+    "noscorefrominnerstate" in rights_envelope.flags
+  
+  -- Runtime invariants
+  invariant verified_by_minimum:
+    -- At least one verifier required
+    len(self.verified_by) >= 1
+  
+  invariant evidence_bundle_privacy:
+    -- Evidence must be hash-only, no raw data references
+    self.evidence_bundle_ref =~ "^sha256:[a-f0-9]{64}$"
+
+-- ============================================================================
+-- FUNCTION: Eco VC Minimal Token Projection
+-- PURPOSE: Generate BfcToken.v1 view from EcoVC (eligibility only)
+-- ============================================================================
+
+function project_eco_token(vc: EcoVC) -> map<string,any>
+  return {
+    "vc_type": "eco",
+    "eco_action_type": vc.eco_action_type,
+    "ecoimpactscore_band": band_eco_score(vc.ecoimpactscore_delta),
+    "eligibility_scope": vc.usage_scope,
+    "verified": len(vc.verified_by) > 0,
+    "valid_from": vc.valid_from,
+    "rights_header": lookup_rights_envelope(vc.rights_envelope_ref).flags
+  }
+
+-- ============================================================================
+-- FUNCTION: Band Eco Score (coarse-grained for privacy)
+-- PURPOSE: Convert precise score to privacy-preserving band
+-- ============================================================================
+
+function band_eco_score(score: float) -> string
+  if score >= 100.0:
+    return "Platinum"
+  elif score >= 50.0:
+    return "Gold"
+  elif score >= 25.0:
+    return "Silver"
+  elif score >= 10.0:
+    return "Bronze"
+  else:
+    return "Participant"
+
+-- END OF FILE
