@@ -1,0 +1,230 @@
+-- ============================================================================
+-- FILE: bfc.channel.v1.aln
+-- NAMESPACE: AugID.BFC
+-- VERSION: 1.0.0
+-- DESCRIPTION: Bounded Forward Channel specification for secure identity transport
+-- ANCHOR: CyberKube/Cybercore networking patterns
+-- ============================================================================
+
+namespace AugID.BFC v1
+
+-- Import core ALN primitives
+import ALN.Core v1
+import ALN.Crypto v1
+import ALN.CodeAnchor v1
+import AugID.Citizen v1
+
+-- ============================================================================
+-- RECORD: BoundedForwardChannel
+-- PURPOSE: Security envelope defining communication channel parameters
+-- INVARIANTS: All data exchange bounded by mobility, topology, safety tags
+-- ============================================================================
+
+record BoundedForwardChannel
+  -- Channel identification
+  channelid             string      -- Unique channel identifier (UUID)
+  didowner              string      -- Citizen DID (channel owner)
+  patternid             string      -- CyberKubePattern ID for this channel
+  
+  -- Mobility and topology constraints
+  mobilityscope         enum      -- ONBODY, LOCALCELL, FEDERATED
+  topology              enum      -- STAR, MESH, POINT_TO_POINT
+  maxhops               uint8     -- Maximum relay hops (0 = direct only)
+  jittermaxms           uint32    -- Maximum acceptable latency jitter in milliseconds
+  
+  -- Offline operation support
+  offlinesnapshothash   string    -- HashRef to ID snapshot (CodeAnchor reference)
+  snapshot_valid_from   datetime  -- ISO-8601 timestamp
+  snapshot_valid_until  datetime  -- ISO-8601 timestamp
+  
+  -- Safety and neurorights envelope
+  safetytag             string    -- Links to RoH / neurorights corridor
+  roh_limit             float     -- Rate-of-Harm limit (must be <= 0.3)
+  neurorights_envelope  list<string>  -- e.g., ["no_exclusion_basic_services", ...]
+  
+  -- Cryptographic binding
+  channel_key_pub       string    -- Ed25519 public key for channel encryption
+  channel_signature     string    -- Signature from DID owner authorizing channel
+  
+  -- State tracking
+  created_at            datetime
+  status                enum      -- Active, Suspended, Revoked, Expired
+
+-- ============================================================================
+-- RECORD: BFCMessage
+-- PURPOSE: Message structure transmitted over BoundedForwardChannel
+-- INVARIANTS: All messages signed, schema-declared, scope-bounded
+-- ============================================================================
+
+record BFCMessage
+  messageid             string      -- Unique message identifier
+  channelid             string      -- Reference to BoundedForwardChannel
+  schema_declared       string      -- Expected schema (e.g., "bfc_token.v1")
+  payload_hash          string      -- SHA-256 hash of payload contents
+  payload_encrypted     string      -- Encrypted payload (AES-256-GCM)
+  nonce                 string      -- Encryption nonce
+  sender_did            string      -- DID of message sender
+  recipient_did         string      -- DID of message recipient
+  timestamp             datetime    -- ISO-8601 timestamp
+  signature             string      -- Ed25519 signature over message header + payload_hash
+  
+  -- Scope enforcement
+  mobilityscope         enum      -- Must match channel mobilityscope
+  maxhops_remaining     uint8     -- Decremented on each relay
+
+-- ============================================================================
+-- RECORD: BfcToken.v1
+-- PURPOSE: Minimalist token exposed to verifiers (not full identity shard)
+-- INVARIANTS: Deterministic grammar, authoritative source, rights header present
+-- ============================================================================
+
+record BfcTokenV1
+  -- Token identification
+  tokenid               string      -- Unique token identifier
+  token_version         = "v1"
+  generated_at          datetime    -- ISO-8601 timestamp
+  valid_until           datetime    -- ISO-8601 timestamp (short-lived for security)
+  
+  -- Core identity (pseudonymous)
+  walletdid             string      -- Pseudonymous DID for payment routing
+  interface_type        enum      -- implanted_nfc, EcoNFC, xr_rig, mobile_app
+  
+  -- Consent state (from local consent engine)
+  aiconsentstate        enum      -- CONFIRMED, DENY, SUSPENDED
+  
+  -- Capability flags
+  caps_ok               record      -- {spend_cap_ok: bool, prompt_cap_ok: bool, id_check_ok: bool}
+  
+  -- Eco and accessibility flags
+  eco_flags             record      -- {EcoImpactScore_band: string, Eaccessibility: bool, ServiceClassBasic: string}
+  
+  -- Neurorights header (ALWAYS present, non-negotiable)
+  neurorights_flags     list<string>  -- ["no_exclusion_basic_services", "no_score_from_inner_state", "revocable_at_will"]
+  
+  -- Cryptographic proof
+  issuer_signature      string      -- Signature from citizen's device (BFC service)
+  snapshot_hash         string      -- HashRef to identity snapshot this token derives from
+
+-- ============================================================================
+-- GUARD: BFCChannelGuard
+-- PURPOSE: Enforce BFC channel invariants and security constraints
+-- ============================================================================
+
+guard BFCChannelGuard
+  -- Compile-time invariants
+  invariant mobilityscope_valid:
+    self.mobilityscope in ["ONBODY", "LOCALCELL", "FEDERATED"]
+  
+  invariant topology_valid:
+    self.topology in ["STAR", "MESH", "POINT_TO_POINT"]
+  
+  invariant maxhops_reasonable:
+    self.maxhops <= 5  -- Prevent excessive relay chains
+  
+  invariant jittermaxms_reasonable:
+    self.jittermaxms <= 5000  -- 5 second maximum jitter
+  
+  invariant roh_limit_compliant:
+    -- Rate-of-Harm must not exceed 0.3 (neurorights constraint)
+    self.roh_limit <= 0.3
+  
+  invariant neurorights_flags_complete:
+    "no_exclusion_basic_services" in self.neurorights_envelope
+    "no_score_from_inner_state" in self.neurorights_envelope
+    "revocable_at_will" in self.neurorights_envelope
+  
+  invariant offlinesnapshothash_format:
+    self.offlinesnapshothash =~ "^sha256:[a-f0-9]{64}$"
+  
+  -- Runtime invariants
+  invariant snapshot_not_expired:
+    now() >= self.snapshot_valid_from and now() <= self.snapshot_valid_until
+  
+  invariant channel_key_valid:
+    self.channel_key_pub is_valid_ed25519_public_key()
+  
+  invariant channel_signature_valid:
+    verify_signature(self.channel_signature, self.channel_key_pub, self.contents_hash) == true
+
+-- ============================================================================
+-- GUARD: BfcTokenV1Guard
+-- PURPOSE: Enforce BfcToken.v1 invariants for verifier consumption
+-- ============================================================================
+
+guard BfcTokenV1Guard
+  -- Compile-time invariants
+  invariant token_version_correct:
+    self.token_version == "v1"
+  
+  invariant walletdid_format:
+    self.walletdid =~ "^bostrom1[a-z0-9]{38}$"
+  
+  invariant interface_type_valid:
+    self.interface_type in ["implanted_nfc", "EcoNFC", "xr_rig", "mobile_app"]
+  
+  invariant aiconsentstate_valid:
+    self.aiconsentstate in ["CONFIRMED", "DENY", "SUSPENDED"]
+  
+  invariant neurorights_flags_always_present:
+    len(self.neurorights_flags) >= 3
+    "no_exclusion_basic_services" in self.neurorights_flags
+    "no_score_from_inner_state" in self.neurorights_flags
+    "revocable_at_will" in self.neurorights_flags
+  
+  invariant caps_ok_structure:
+    self.caps_ok.spend_cap_ok is bool
+    self.caps_ok.prompt_cap_ok is bool
+    self.caps_ok.id_check_ok is bool
+  
+  invariant eco_flags_structure:
+    self.eco_flags.EcoImpactScore_band is string
+    self.eco_flags.Eaccessibility is bool
+    self.eco_flags.ServiceClassBasic is string
+  
+  -- Runtime invariants
+  invariant token_not_expired:
+    now() <= self.valid_until
+  
+  invariant issuer_signature_valid:
+    verify_signature(self.issuer_signature, self.walletdid, self.contents_hash) == true
+  
+  invariant snapshot_hash_matches:
+    -- Token must reference valid snapshot
+    lookup_snapshot(self.snapshot_hash) is not None
+
+-- ============================================================================
+-- FUNCTION: Generate BfcToken.v1 from Citizen Shard
+-- PURPOSE: Create minimalist token from full AugmentedCitizenID + VCs
+-- ============================================================================
+
+function generate_bfc_token(
+  citizen_shard: AugmentedCitizenID,
+  consent_state: string,
+  selected_vcs: list<string>
+) -> BfcTokenV1
+  -- Local consent engine determines what to expose
+  token = {
+    "tokenid": generate_uuid(),
+    "token_version": "v1",
+    "generated_at": now(),
+    "valid_until": now() + 300_seconds,  -- 5 minute validity
+    "walletdid": citizen_shard.did,
+    "interface_type": detect_interface_type(),
+    "aiconsentstate": consent_state,
+    "caps_ok": {
+      "spend_cap_ok": check_spend_cap(citizen_shard),
+      "prompt_cap_ok": check_prompt_cap(citizen_shard),
+      "id_check_ok": check_id_check_cap(citizen_shard)
+    },
+    "eco_flags": {
+      "EcoImpactScore_band": compute_eco_band(citizen_shard, selected_vcs),
+      "Eaccessibility": check_accessibility_status(citizen_shard),
+      "ServiceClassBasic": "Enabled"  -- Hard-coded per neurorights
+    },
+    "neurorights_flags": citizen_shard.neurightsflags,
+    "issuer_signature": sign_with_device_key(token_contents_hash),
+    "snapshot_hash": citizen_shard.organichainroot
+  }
+  return token
+
+-- END OF FILE
