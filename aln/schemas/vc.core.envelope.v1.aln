@@ -1,0 +1,113 @@
+-- ============================================================================
+-- FILE: vc.core.envelope.v1.aln
+-- NAMESPACE: AugID.VC.Core
+-- VERSION: 1.0.0
+-- DESCRIPTION: Common Verifiable Credential envelope for all VC types
+-- ANCHOR: ROWRPM shard linked to AugmentedCitizenID
+-- ============================================================================
+
+namespace AugID.VC.Core v1
+
+-- Import core ALN primitives
+import ALN.Core v1
+import ALN.Crypto v1
+import AugID.Citizen v1
+
+-- ============================================================================
+-- RECORD: VCCoreEnvelope
+-- PURPOSE: Shared header for all Verifiable Credentials
+-- INVARIANTS: Immutable once issued, revocation via separate row only
+-- ============================================================================
+
+record VCCoreEnvelope
+  -- Unique identifiers
+  vcid                string      -- Unique VC identifier (UUID or ROWRPM row ID)
+  auid_ref            string      -- Reference to AugmentedCitizenID.did (soul-bound)
+  
+  -- Issuer and subject
+  issuer_did          string      -- DID of issuing entity (hospital, school, city, etc.)
+  subject_did         string      -- DID of subject (usually == auid_ref.did)
+  
+  -- Schema reference
+  schemaref           string      -- Which VC type grammar (e.g., "au.vc.health.v1")
+  
+  -- Validity window
+  valid_from          datetime    -- ISO-8601 timestamp
+  valid_until         datetime    -- ISO-8601 timestamp (optional, None for permanent)
+  
+  -- Revocation tracking
+  revocation_slot     string      -- Optional pointer to revocation row in ROWRPM
+  
+  -- Cryptographic proof
+  issuer_signature    string      -- Ed25519 signature over VC contents
+  issued_at           datetime    -- ISO-8601 timestamp of issuance
+  
+  -- Neurorights envelope (inherited from AugmentedCitizenID)
+  rights_envelope_ref string      -- Reference to neurorights constraints
+
+-- ============================================================================
+-- RECORD: VCRevocationEvent
+-- PURPOSE: Explicit revocation record (append-only, never deletes original VC)
+-- INVARIANTS: Forward-only, linked to original vcid
+-- ============================================================================
+
+record VCRevocationEvent
+  eventid             string
+  vcid                string      -- Reference to original VC being revoked
+  revocation_reason   enum        -- Expired, Compromised, Withdrawn, LegalOrder
+  revoked_by          string      -- DID of entity revoking (issuer or subject)
+  revoked_at          datetime
+  signature           string      -- Signature from revoking entity
+  antirollback        bool        -- MUST be true
+
+-- ============================================================================
+-- GUARD: VCCoreEnvelopeGuard
+-- PURPOSE: Enforce VC envelope invariants
+-- ============================================================================
+
+guard VCCoreEnvelopeGuard
+  -- Compile-time invariants
+  invariant auid_ref_matches_subject:
+    self.auid_ref == self.subject_did
+  
+  invariant valid_from_before_valid_until:
+    if self.valid_until is not None:
+      self.valid_from < self.valid_until
+  
+  invariant issuer_signature_present:
+    self.issuer_signature is not None and len(self.issuer_signature) > 0
+  
+  invariant schemaref_format_valid:
+    self.schemaref =~ "^au\\.vc\\.[a-z]+\\.v[0-9]+$"
+  
+  -- Runtime invariants
+  invariant no_revocation_without_event:
+    -- VC is invalid if revocation_slot points to valid revocation event
+    if self.revocation_slot is not None:
+      revocation_event = lookup_row(self.revocation_slot)
+      revocation_event is not None implies VC_STATUS == "REVOKED"
+
+-- ============================================================================
+-- SCHEMA: VC Status Resolution
+-- PURPOSE: Determine VC validity from ROWRPM history
+-- ============================================================================
+
+function resolve_vc_status(vcid: string) -> enum
+  -- Returns: VALID, EXPIRED, REVOKED, SUSPENDED
+  
+  vc_record = lookup_vc_by_id(vcid)
+  
+  if vc_record is None:
+    return "NOT_FOUND"
+  
+  if vc_record.valid_until is not None and now() > vc_record.valid_until:
+    return "EXPIRED"
+  
+  if vc_record.revocation_slot is not None:
+    revocation = lookup_row(vc_record.revocation_slot)
+    if revocation is not None:
+      return "REVOKED"
+  
+  return "VALID"
+
+-- END OF FILE
